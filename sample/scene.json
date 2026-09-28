@@ -1,0 +1,16 @@
+{
+  "state": { "blocks": [0, 0, 0, 0, 0, 0], "lost": [], "matrix": [], "records": [],
+             "encodes": 0, "losses": 0, "recovers": 0 },
+  "events": [
+    { "kind": "encode", "data": [23, 200, 5, 137] },
+    { "kind": "lose", "index": 1 },
+    { "kind": "lose", "index": 4 },
+    { "kind": "recover" },
+    { "kind": "lose", "index": 0 },
+    { "kind": "lose", "index": 3 },
+    { "kind": "recover" },
+    { "kind": "lose", "index": 0 },
+    { "kind": "lose", "index": 1 },
+    { "kind": "recover" }
+  ]
+}

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>galoisshard 分片托盘</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#0d1117;color:#e8eef7}
+.wrap{display:grid;grid-template-columns:minmax(460px,1fr) 360px;gap:14px;padding:16px;align-items:start}
+.card{background:#161d29;border:1px solid #26313f;border-radius:12px;padding:12px}
+h1{font-size:14px;margin:0 0 10px;color:#9fb3c8}
+.tray{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+.shard{width:92px;border:1px solid #2c3a4c;border-radius:10px;padding:8px;background:#111823;cursor:pointer}
+.shard .tag{font-size:11px;color:#8fa6bd}
+.shard .val{font:600 22px/1.3 ui-monospace,Consolas,monospace;color:#8fb8ff}
+.shard.parity .val{color:#e0b56f}
+.shard.lost{opacity:.42;border-style:dashed}
+.shard.lost .val{color:#e57373}
+.grid{display:inline-grid;gap:3px;margin-bottom:12px}
+.cell{font:12px/1.4 ui-monospace,Consolas,monospace;background:#0f1620;border:1px solid #24303e;border-radius:4px;padding:2px 6px;text-align:right;min-width:30px}
+.cell.hit{background:#22372c;color:#9fe6b0}
+.cell.unit{background:#1c2a3f;color:#a8c6ff}
+button{font:inherit;padding:5px 10px;margin:0 8px 8px 0;border:1px solid #2c3a4c;border-radius:8px;background:#1b2433;color:#e8eef7;cursor:pointer}
+button.main{background:#2f6fed;border-color:#2f6fed}
+input{font:inherit;padding:4px 8px;border:1px solid #2c3a4c;border-radius:8px;background:#0f1620;color:#e8eef7;width:76px}
+pre{background:#0a0f16;color:#9fd0ff;padding:10px;border-radius:8px;overflow:auto;font-size:12px}
+.log{font-size:12px;color:#9fb3c8;line-height:1.7}
+.chip{display:inline-block;font-size:12px;padding:2px 9px;border-radius:999px;background:#1f2c3d;color:#9fd0ff;margin:0 6px 6px 0}
+.chip.bad{background:#3a222b;color:#ff9aa9}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>分片托盘（点卡片把它标成丢失）</h1>
+    <div id="tray" class="tray"></div>
+    <div>
+      <button id="doEncode" class="main">按样例数据编码</button>
+      <button id="doRecover">恢复</button>
+      <button id="doReset">重置</button>
+      <span class="log">第一个数据块字节 <input id="byteBox" type="number" min="0" max="255" value="23"></span>
+      <button id="doByte">改它并重算</button>
+    </div>
+    <div id="chips" style="margin-top:8px"></div>
+    <pre id="out">还没跑</pre>
+  </div>
+  <div class="card">
+    <h1>生成矩阵（后两行是校验矩阵）</h1>
+    <div id="matrix" class="grid"></div>
+    <h1>恢复记录</h1>
+    <div id="log">还没有恢复。</div>
+  </div>
+</div>
+<div id="scene" hidden>{
+  "state": { "blocks": [0, 0, 0, 0, 0, 0], "lost": [], "matrix": [], "records": [],
+             "encodes": 0, "losses": 0, "recovers": 0 },
+  "events": [
+    { "kind": "encode", "data": [23, 200, 5, 137] },
+    { "kind": "lose", "index": 1 },
+    { "kind": "lose", "index": 4 },
+    { "kind": "recover" },
+    { "kind": "lose", "index": 0 },
+    { "kind": "lose", "index": 3 },
+    { "kind": "recover" },
+    { "kind": "lose", "index": 0 },
+    { "kind": "lose", "index": 1 },
+    { "kind": "recover" }
+  ]
+}</div>
+<script type="module">
+import { render } from "./app.js";
+
+const spec = JSON.parse(document.getElementById("scene").textContent);
+const original = JSON.parse(JSON.stringify(spec.events));
+const data = [23, 200, 5, 137];
+
+function draw() {
+  const view = render(spec);
+  const tray = document.getElementById("tray");
+  tray.textContent = "";
+  (view.labels || []).forEach(function (label, index) {
+    const card = document.createElement("div");
+    const lost = (view.lost || []).indexOf(index) >= 0;
+    card.className = "shard" + (index < 4 ? "" : " parity") + (lost ? " lost" : "");
+    const tag = document.createElement("div");
+    tag.className = "tag";
+    tag.textContent = label + (index < 4 ? " 数据块" : " 校验块");
+    const val = document.createElement("div");
+    val.className = "val";
+    val.textContent = (view.blocks || [])[index] === undefined || lost ? "--" : String(view.blocks[index]);
+    card.appendChild(tag);
+    card.appendChild(val);
+    card.addEventListener("click", function () {
+      spec.events.push({ kind: "lose", index: index });
+      draw();
+    });
+    tray.appendChild(card);
+  });
+  const grid = document.getElementById("matrix");
+  grid.textContent = "";
+  grid.style.gridTemplateColumns = "repeat(" + ((view.matrix || [])[0] || []).length + ", auto)";
+  (view.matrix || []).forEach(function (row, spot) {
+    row.forEach(function (value, at) {
+      const cell = document.createElement("div");
+      cell.className = "cell" + (spot < 4 && at === spot ? " unit" : (value === 0 ? "" : " hit"));
+      cell.textContent = String(value);
+      grid.appendChild(cell);
+    });
+  });
+  const log = document.querySelectorAll(".log")[1];
+  log.textContent = "";
+  if ((view.records || []).length === 0) {
+    log.textContent = "还没有恢复。";
+  } else {
+    (view.records || []).forEach(function (row, spot) {
+      const line = document.createElement("div");
+      line.textContent = "第 " + (spot + 1) + " 次：用到块 " + JSON.stringify(row[0]) +
+        "，补回 " + JSON.stringify(row[1]) + "，字节 " + JSON.stringify(row[2]);
+      log.appendChild(line);
+    });
+  }
+  const chips = document.getElementById("chips");
+  chips.textContent = "";
+  const chip = function (label, bad) {
+    const span = document.createElement("span");
+    span.className = bad ? "chip bad" : "chip";
+    span.textContent = label;
+    chips.appendChild(span);
+  };
+  chip("编码 " + view.encodes + " 次");
+  chip("丢失 " + view.losses + " 次");
+  chip("恢复 " + view.recovers + " 次");
+  chip("前缀不变 " + view.prefix_ok, !view.prefix_ok);
+  chip("校验自洽 " + view.parity_ok, !view.parity_ok);
+  chip("按序取块 " + view.used_sorted, !view.used_sorted);
+  chip("异常 " + view.failed_events + " 条", view.failed_events > 0);
+  document.getElementById("out").textContent = JSON.stringify({
+    blocks: view.blocks, lost: view.lost, codes: (view.failed_marks || []).map(function (row) { return row[1]; })
+  }, null, 1);
+}
+document.getElementById("doEncode").addEventListener("click", function () {
+  spec.events = [{ kind: "encode", data: data.slice() }];
+  draw();
+});
+document.getElementById("doRecover").addEventListener("click", function () {
+  spec.events.push({ kind: "recover" });
+  draw();
+});
+document.getElementById("doReset").addEventListener("click", function () {
+  spec.events = JSON.parse(JSON.stringify(original));
+  draw();
+});
+document.getElementById("doByte").addEventListener("click", function () {
+  const box = document.getElementById("byteBox");
+  const value = Number(box.value);
+  data[0] = value;
+  for (const event of spec.events) {
+    if (event.kind === "encode") { event.data = data.slice(); }
+  }
+  draw();
+});
+draw();
+</script>
+</body>
+</html>
